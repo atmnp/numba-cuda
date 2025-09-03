@@ -37,6 +37,7 @@ class TestImport(unittest.TestCase):
             "numba.np.polynomial",
             "numba.np.arraymath",
             "numba.np.npdatetime",
+            "numba.cuda.np.npdatetime",
             "numba.np.npyimpl",
             "numba.typed.typeddict",
             "numba.typed.typedlist",

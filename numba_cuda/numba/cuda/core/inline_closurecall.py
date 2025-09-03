@@ -1119,7 +1119,7 @@ def length_of_iterator(typingctx, val):
             intp_t = context.get_value_type(types.intp)
             iterobj = context.make_helper(builder, iterty, value=value)
             arrayty = iterty.array_type
-            from numba.np.arrayobj import make_array
+            from numba.cuda.np.arrayobj import make_array
 
             ary = make_array(arrayty)(context, builder, value=iterobj.array)
             shape = cgutils.unpack_tuple(builder, ary.shape)
