@@ -39,7 +39,7 @@ from numba.core.extending import intrinsic
 from numba.core.typing import signature
 
 from numba.cuda.core import postproc, rewrites
-from numba.np.unsafe.ndarray import empty_inferred as unsafe_empty_inferred
+from numba.cuda.np.unsafe.ndarray import empty_inferred as unsafe_empty_inferred
 import numpy as np
 import operator
 import numba.misc.special
