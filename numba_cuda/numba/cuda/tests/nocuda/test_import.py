@@ -39,6 +39,7 @@ class TestImport(unittest.TestCase):
             "numba.np.npdatetime",
             "numba.cuda.np.npdatetime",
             "numba.np.npyimpl",
+            "numba.cuda.np.npyimpl",
             "numba.typed.typeddict",
             "numba.typed.typedlist",
             "numba.experimental.jitclass.base",
