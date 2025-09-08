@@ -34,6 +34,7 @@ class TestImport(unittest.TestCase):
             "numba.misc.literal",
             "numba.misc.cffiimpl",
             "numba.np.linalg",
+            "numba.cuda.np.linalg",
             "numba.np.polynomial",
             "numba.np.arraymath",
             "numba.np.npdatetime",
