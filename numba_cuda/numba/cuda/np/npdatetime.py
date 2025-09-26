@@ -20,7 +20,7 @@ from numba.core.imputils import (
     impl_ret_untracked,
     lower_cast,
 )
-from numba.cuda.np import npdatetime_helpers, npyfuncs
+from numba.cuda.np import npdatetime_helpers, numpy_support, npyfuncs
 from numba.extending import overload_method
 from numba.core.config import IS_32BITS
 from numba.core.errors import LoweringError
@@ -922,6 +922,13 @@ def _cast_npdatetime_int64(context, builder, fromty, toty, val):
 @overload_method(types.NPTimedelta, "__hash__")
 @overload_method(types.NPDatetime, "__hash__")
 def ol_hash_npdatetime(x):
+    if (
+        numpy_support.numpy_version >= (2, 2)
+        and isinstance(x, types.NPTimedelta)
+        and not x.unit
+    ):
+        raise ValueError("Can't hash generic timedelta64")
+
     if IS_32BITS:
 
         def impl(x):

@@ -24,13 +24,13 @@ from numba.core.imputils import (
 )
 from numba.core import typing, types, config
 from numba.cuda import cgutils
-from numba.np.numpy_support import (
+from numba.cuda.np.numpy_support import (
     ufunc_find_matching_loop,
     select_array_wrapper,
     from_dtype,
     _ufunc_loop_sig,
 )
-from numba.np.arrayobj import _getitem_array_generic
+from numba.cuda.np.arrayobj import _getitem_array_generic
 from numba.core.typing import npydecl
 from numba.core.extending import overload, intrinsic
 
@@ -467,6 +467,7 @@ def _build_array(context, builder, array_ty, input_types, inputs):
     def make_intp_const(val):
         return context.get_constant(types.intp, val)
 
+    ZERO = make_intp_const(0)  # noqa: F841
     ONE = make_intp_const(1)
 
     src_shape = cgutils.alloca_once(
