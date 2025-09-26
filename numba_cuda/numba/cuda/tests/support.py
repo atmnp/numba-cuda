@@ -18,19 +18,22 @@ import tempfile
 import time
 import types as pytypes
 from functools import cached_property
+import multiprocessing as mp
+import traceback
 
 import numpy as np
 
 from numba import types
-from numba.core import errors, config
+from numba.core import errors
+from numba.cuda.core import config
 from numba.cuda.typing import cffi_utils
 from numba.cuda.memory_management.nrt import rtsys
-from numba.core.extending import (
+from numba.cuda.extending import (
     typeof_impl,
     register_model,
-    unbox,
     NativeValue,
 )
+from numba.cuda.core.pythonapi import unbox
 from numba.core.datamodel.models import OpaqueModel
 from numba.cuda.np import numpy_support
 
@@ -66,14 +69,19 @@ IS_MACOS_ARM64 = IS_MACOS and _uname.machine == "arm64"
 IS_NUMPY_2 = numpy_support.numpy_version >= (2, 0)
 skip_if_numpy_2 = unittest.skipIf(IS_NUMPY_2, "Not supported on numpy 2.0+")
 
-try:
-    import scipy.linalg.cython_blas  # noqa: F401
 
-    has_blas = True
-except ImportError:
-    has_blas = False
+# Typeguard
+has_typeguard = bool(os.environ.get("NUMBA_USE_TYPEGUARD", 0))
 
-needs_blas = unittest.skipUnless(has_blas, "BLAS needs SciPy 1.0+")
+skip_unless_typeguard = unittest.skipUnless(
+    has_typeguard,
+    "Typeguard is not enabled",
+)
+
+skip_if_typeguard = unittest.skipIf(
+    has_typeguard,
+    "Broken if Typeguard is enabled",
+)
 
 _trashcan_dir = "numba-cuda-tests"
 
@@ -771,20 +779,6 @@ class TestCase(unittest.TestCase):
 
         return Dummy, DummyType
 
-    def skip_if_no_external_compiler(self):
-        """
-        Call this to ensure the test is skipped if no suitable external compiler
-        is found. This is a method on the TestCase opposed to a stand-alone
-        decorator so as to make it "lazy" via runtime evaluation opposed to
-        running at test-discovery time.
-        """
-        # This is a local import to avoid deprecation warnings being generated
-        # through the use of the numba.pycc module.
-        from numba.pycc.platform import external_compiler_works
-
-        if not external_compiler_works():
-            self.skipTest("No suitable external compiler was found.")
-
 
 class MemoryLeak(object):
     __enable_leak_check = True
@@ -837,3 +831,81 @@ class CheckWarningsMixin(object):
                     self.assertEqual(w.category, category)
                     found += 1
         self.assertEqual(found, len(messages))
+
+
+@contextlib.contextmanager
+def override_env_config(name, value):
+    """
+    Return a context manager that temporarily sets an Numba config environment
+    *name* to *value*.
+    """
+    old = os.environ.get(name)
+    os.environ[name] = value
+    config.reload_config()
+
+    try:
+        yield
+    finally:
+        if old is None:
+            # If it wasn't set originally, delete the environ var
+            del os.environ[name]
+        else:
+            # Otherwise, restore to the old value
+            os.environ[name] = old
+        # Always reload config
+        config.reload_config()
+
+
+def run_in_new_process_in_cache_dir(func, cache_dir, verbose=True):
+    """Spawn a new process to run `func` with a temporary cache directory.
+
+    The childprocess's stdout and stderr will be captured and redirected to
+    the current process's stdout and stderr.
+
+    Similar to ``run_in_new_process_caching()`` but the ``cache_dir`` is a
+    directory path instead of a name prefix for the directory path.
+
+    Returns
+    -------
+    ret : dict
+        exitcode: 0 for success. 1 for exception-raised.
+        stdout: str
+        stderr: str
+    """
+    ctx = mp.get_context("spawn")
+    qout = ctx.Queue()
+    with override_env_config("NUMBA_CACHE_DIR", cache_dir):
+        proc = ctx.Process(target=_remote_runner, args=[func, qout])
+        proc.start()
+        proc.join()
+        stdout = qout.get_nowait()
+        stderr = qout.get_nowait()
+        if verbose and stdout.strip():
+            print()
+            print("STDOUT".center(80, "-"))
+            print(stdout)
+        if verbose and stderr.strip():
+            print(file=sys.stderr)
+            print("STDERR".center(80, "-"), file=sys.stderr)
+            print(stderr, file=sys.stderr)
+    return {
+        "exitcode": proc.exitcode,
+        "stdout": stdout,
+        "stderr": stderr,
+    }
+
+
+def _remote_runner(fn, qout):
+    """Used by `run_in_new_process_caching()`"""
+    with captured_stderr() as stderr:
+        with captured_stdout() as stdout:
+            try:
+                fn()
+            except Exception:
+                traceback.print_exc()
+                exitcode = 1
+            else:
+                exitcode = 0
+        qout.put(stdout.getvalue())
+    qout.put(stderr.getvalue())
+    sys.exit(exitcode)

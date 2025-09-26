@@ -13,8 +13,6 @@ from numba.core import (
     types,
     typing,
     ir,
-    funcdesc,
-    config,
     lowering,
 )
 
@@ -24,7 +22,7 @@ from numba.cuda.core.compiler_machinery import (
     AnalysisPass,
     register_pass,
 )
-from numba.core.annotations import type_annotations
+from numba.cuda.core.annotations import type_annotations
 from numba.cuda.core.ir_utils import (
     raise_on_unsupported_feature,
     warn_deprecated,
@@ -36,9 +34,16 @@ from numba.cuda.core.ir_utils import (
     compute_cfg_from_blocks,
     is_operator_or_getitem,
 )
-from numba.cuda.core import postproc, rewrites
-from llvmlite import binding as llvm
 
+from numba.cuda.core import postproc, rewrites, funcdesc, config
+
+
+try:
+    # llvmlite < 0.45
+    from llvmlite.binding import passmanagers
+except ImportError:
+    # llvmlite >= 0.45
+    from llvmlite.binding import newpassmanagers as passmanagers
 
 # Outputs of type inference pass
 _TypingResults = namedtuple(
@@ -324,7 +329,7 @@ class BaseNativeLowering(abc.ABC, LoweringPass):
         calltypes = state.calltypes
         flags = state.flags
         metadata = state.metadata
-        pre_stats = llvm.passmanagers.dump_refprune_stats()
+        pre_stats = passmanagers.dump_refprune_stats()
 
         msg = "Function %s failed at nopython mode lowering" % (
             state.func_id.func_name,
@@ -387,7 +392,7 @@ class BaseNativeLowering(abc.ABC, LoweringPass):
                 )
 
             # capture pruning stats
-            post_stats = llvm.passmanagers.dump_refprune_stats()
+            post_stats = passmanagers.dump_refprune_stats()
             metadata["prune_stats"] = post_stats - pre_stats
 
             # Save the LLVM pass timings
@@ -474,7 +479,7 @@ class NoPythonBackend(LoweringPass):
 @register_pass(mutates_CFG=True, analysis_only=False)
 class InlineOverloads(FunctionPass):
     """
-    This pass will inline a function wrapped by the numba.extending.overload
+    This pass will inline a function wrapped by the numba.cuda.extending.overload
     decorator directly into the site of its call depending on the value set in
     the 'inline' kwarg to the decorator.
 

@@ -12,12 +12,12 @@ import math
 import llvmlite.ir
 import numpy as np
 
-from numba.core.extending import overload
+from numba.cuda.extending import overload
 from numba.core.imputils import impl_ret_untracked
 from numba.core import typing, types, errors
 from numba.cuda import cgutils
-from numba.core.extending import register_jitable
 from numba.cuda.np import npdatetime
+from numba.cuda.extending import register_jitable
 from numba.np.math import cmathimpl, mathimpl, numbers
 from numba.np.numpy_support import numpy_version
 
