@@ -19,7 +19,7 @@ import numpy as np
 from numba import pndindex, literal_unroll
 from numba.core import types, typing, errors, extending
 from numba.cuda import cgutils, config
-from numba.np.numpy_support import (
+from numba.cuda.np.numpy_support import (
     as_dtype,
     from_dtype,
     carray,
@@ -31,7 +31,11 @@ from numba.np.numpy_support import (
     lt_complex,
     lt_floats,
 )
-from numba.np.numpy_support import type_can_asarray, is_nonelike, numpy_version
+from numba.cuda.np.numpy_support import (
+    type_can_asarray,
+    is_nonelike,
+    numpy_version,
+)
 from numba.core.imputils import (
     lower_builtin,
     lower_getattr,
@@ -3248,8 +3252,8 @@ def _call_contiguous_check(checker, context, builder, aryty, ary):
     Args
     ----
     checker :
-        ``numba.numpy_supports.is_contiguous``, or
-        ``numba.numpy_supports.is_fortran``.
+        ``numba.cuda.np.numpy_supports.is_contiguous``, or
+        ``numba.cuda.np.numpy_supports.is_fortran``.
     context : target context
     builder : llvm ir builder
     aryty : numba type
@@ -5860,8 +5864,8 @@ def get_cfarray_intrinsic(layout, dtype_):
 
 def np_cfarray(context, builder, sig, args):
     """
-    numba.numpy_support.carray(...) and
-    numba.numpy_support.farray(...).
+    numba.cuda.np.numpy_support.carray(...) and
+    numba.cuda.np.numpy_support.farray(...).
     """
     ptrty, shapety = sig.args[:2]
     ptr, shape = args[:2]
