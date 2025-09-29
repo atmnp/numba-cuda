@@ -4,7 +4,7 @@
 import numpy as np
 
 import unittest
-from numba.np.numpy_support import from_dtype
+from numba.cuda.np.numpy_support import from_dtype
 from numba import typeof
 from numba.cuda import jit
 from numba.core import types
@@ -17,7 +17,7 @@ def array_dtype(a, res):
 
 
 def use_dtype(a, b, res):
-    res[0] = a.view(b.dtype)[0]
+    res[0] = a.view(b.dtype)
 
 
 def dtype_eq_int64(a, res):
@@ -100,16 +100,23 @@ def array_ctypes_data(arr, res):
 
 
 def array_real(arr, res):
-    if arr.ndim == 2:
+    if arr.ndim == 1:
         for i in range(arr.shape[0]):
             res[i] = arr.real[i]
     else:
         for i in range(arr.shape[0]):
-            res[i] = arr.real[i]
+            for j in range(arr.shape[1]):
+                res[i, j] = arr.real[i, j]
 
 
 def array_imag(arr, res):
-    res[0] = arr.imag
+    if arr.ndim == 1:
+        for i in range(arr.shape[0]):
+            res[i] = arr.imag[i]
+    else:
+        for i in range(arr.shape[0]):
+            for j in range(arr.shape[1]):
+                res[i, j] = arr.imag[i, j]
 
 
 class TestArrayAttr(MemoryLeakMixin, TestCase):
@@ -337,10 +344,18 @@ class TestRealImagAttr(MemoryLeakMixin, TestCase):
         # test 1D
         size = 10
         arr = np.arange(size) + np.arange(size) * 10j
-        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        out = np.zeros(arr.shape)
+        cout = np.zeros(arr.shape)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertPreciseEqual(out, cout)
         # test 2D
         arr = arr.reshape(2, 5)
-        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        out = np.zeros(arr.shape)
+        cout = np.zeros(arr.shape)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertPreciseEqual(out, cout)
 
     def test_complex_real(self):
         self.check_complex(array_real)
@@ -354,18 +369,32 @@ class TestRealImagAttr(MemoryLeakMixin, TestCase):
         # test 1D
         size = 10
         arr = np.arange(size, dtype=dtype)
-        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        out = np.zeros(arr.shape)
+        cout = np.zeros(arr.shape)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertPreciseEqual(out, cout)
         # test 2D
         arr = arr.reshape(2, 5)
-        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        out = np.zeros(arr.shape)
+        cout = np.zeros(arr.shape)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertPreciseEqual(out, cout)
         # test identity
-        self.assertEqual(arr.data, pyfunc(arr).data)
-        self.assertEqual(arr.data, cfunc(arr).data)
+        out = np.zeros(arr.shape)
+        cout = np.zeros(arr.shape)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertEqual(arr.data, out.data)
+        self.assertEqual(arr.data, cout.data)
         # test writable
-        real = cfunc(arr)
-        self.assertNotEqual(arr[0, 0], 5)
-        real[0, 0] = 5
-        self.assertEqual(arr[0, 0], 5)
+        out = np.zeros(arr.shape)
+        cout = np.zeros(arr.shape)
+        cfunc[1, 1](arr, cout)
+        self.assertNotEqual(cout[0, 0], 5)
+        cout[0, 0] = 5
+        self.assertEqual(cout[0, 0], 5)
 
     def test_number_real(self):
         """
@@ -380,19 +409,22 @@ class TestRealImagAttr(MemoryLeakMixin, TestCase):
         # test 1D
         size = 10
         arr = np.arange(size, dtype=dtype)
-        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        out = np.zeros(arr.shape)
+        cout = np.zeros(arr.shape)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertPreciseEqual(out, cout)
         # test 2D
         arr = arr.reshape(2, 5)
-        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        out = np.zeros(arr.shape)
+        cout = np.zeros(arr.shape)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertPreciseEqual(out, cout)
         # test are zeros
-        self.assertEqual(cfunc(arr).tolist(), np.zeros_like(arr).tolist())
-        # test readonly
-        imag = cfunc(arr)
-        with self.assertRaises(ValueError) as raises:
-            imag[0] = 1
-        self.assertEqual(
-            "assignment destination is read-only", str(raises.exception)
-        )
+        cout = np.zeros(arr.shape)
+        cfunc[1, 1](arr, cout)
+        self.assertEqual(cout.tolist(), np.zeros_like(arr).tolist())
 
     def test_number_imag(self):
         """
@@ -409,23 +441,29 @@ class TestRealImagAttr(MemoryLeakMixin, TestCase):
 
         # check numpy behavior
         # .real is identity
-        self.assertIs(array_real(arr), arr)
+        out = np.zeros(arr.shape, dtype=arr.dtype)
+        array_real(arr, out)
+        self.assertPreciseEqual(out, arr)
         # .imag is zero_like
-        self.assertEqual(array_imag(arr).tolist(), np.zeros_like(arr).tolist())
+        out = np.zeros(arr.shape, dtype=arr.dtype)
+        array_imag(arr, out)
+        self.assertEqual(out.tolist(), np.zeros_like(arr).tolist())
 
         # check numba behavior
         # it's most likely a user error, anyway
         jit_array_real = jit(array_real)
         jit_array_imag = jit(array_imag)
 
+        cout = np.zeros(arr.shape, dtype=arr.dtype)
         with self.assertRaises(TypingError) as raises:
-            jit_array_real(arr)
+            jit_array_real[1, 1](arr, cout)
         self.assertIn(
             "cannot access .real of array of Record", str(raises.exception)
         )
 
+        cout = np.zeros(arr.shape, dtype=arr.dtype)
         with self.assertRaises(TypingError) as raises:
-            jit_array_imag(arr)
+            jit_array_imag[1, 1](arr, cout)
         self.assertIn(
             "cannot access .imag of array of Record", str(raises.exception)
         )
