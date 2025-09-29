@@ -172,7 +172,7 @@ class CUDATargetContext(BaseContext):
         from numba.core import optional  # noqa: F401
         from numba.misc import cffiimpl
         from numba.cuda.np import arrayobj  # noqa: F401
-        from numba.np import npdatetime  # noqa: F401
+        from numba.cuda.np import npdatetime  # noqa: F401
         from . import (
             cudaimpl,
             fp16,

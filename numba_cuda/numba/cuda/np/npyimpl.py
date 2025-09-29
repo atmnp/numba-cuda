@@ -25,11 +25,11 @@ from numba.core.imputils import (
 from numba.core import typing, types
 from numba.cuda import cgutils
 from numba.cuda.np.numpy_support import (
+    ufunc_find_matching_loop,
     select_array_wrapper,
     from_dtype,
     _ufunc_loop_sig,
 )
-from numba.np.numpy_support import ufunc_find_matching_loop
 from numba.cuda.np.arrayobj import _getitem_array_generic
 from numba.core.typing import npydecl
 from numba.core.extending import overload, intrinsic

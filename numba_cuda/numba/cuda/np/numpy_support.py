@@ -2,18 +2,20 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 import collections
-import numpy as np
-import re
-from numba.core import types, errors
-from numba.cuda.typing import signature
 import ctypes
+import re
+
+import numpy as np
+
+from numba.core import errors, types
+from numba.cuda.typing.templates import signature
+from numba.cuda.np import npdatetime_helpers
 from numba.core.errors import TypingError
 
-
-from numba.cuda.np import npdatetime_helpers
+# re-export
+from numba.core.cgutils import is_nonelike  # noqa: F401
 
 numpy_version = tuple(map(int, np.__version__.split(".")[:2]))
-
 
 FROM_DTYPE = {
     np.dtype("bool"): types.boolean,
@@ -32,7 +34,6 @@ FROM_DTYPE = {
     np.dtype("complex128"): types.complex128,
     np.dtype(object): types.pyobject,
 }
-
 
 re_typestr = re.compile(r"[<>=\|]([a-z])(\d+)?$", re.I)
 re_datetimestr = re.compile(r"[<>=\|]([mM])8?(\[([a-z]+)\])?$", re.I)
@@ -120,6 +121,43 @@ _as_dtype_letters = {
 }
 
 
+def as_dtype(nbtype):
+    """
+    Return a numpy dtype instance corresponding to the given Numba type.
+    NotImplementedError is if no correspondence is known.
+    """
+    nbtype = types.unliteral(nbtype)
+    if isinstance(nbtype, (types.Complex, types.Integer, types.Float)):
+        return np.dtype(str(nbtype))
+    if isinstance(nbtype, (types.Boolean)):
+        return np.dtype("?")
+    if isinstance(nbtype, (types.NPDatetime, types.NPTimedelta)):
+        letter = _as_dtype_letters[type(nbtype)]
+        if nbtype.unit:
+            return np.dtype("%s[%s]" % (letter, nbtype.unit))
+        else:
+            return np.dtype(letter)
+    if isinstance(nbtype, (types.CharSeq, types.UnicodeCharSeq)):
+        letter = _as_dtype_letters[type(nbtype)]
+        return np.dtype("%s%d" % (letter, nbtype.count))
+    if isinstance(nbtype, types.Record):
+        return as_struct_dtype(nbtype)
+    if isinstance(nbtype, types.EnumMember):
+        return as_dtype(nbtype.dtype)
+    if isinstance(nbtype, types.npytypes.DType):
+        return as_dtype(nbtype.dtype)
+    if isinstance(nbtype, types.NumberClass):
+        return as_dtype(nbtype.dtype)
+    if isinstance(nbtype, types.NestedArray):
+        spec = (as_dtype(nbtype.dtype), tuple(nbtype.shape))
+        return np.dtype(spec)
+    if isinstance(nbtype, types.PyObject):
+        return np.dtype(object)
+
+    msg = f"{nbtype} cannot be represented as a NumPy dtype"
+    raise errors.NumbaNotImplementedError(msg)
+
+
 def as_struct_dtype(rec):
     """Convert Numba Record type to NumPy structured dtype"""
     assert isinstance(rec, types.Record)
@@ -161,41 +199,33 @@ def _check_struct_alignment(rec, fields):
                 raise ValueError(msg.format(npy_align, llvm_align, dt))
 
 
-def as_dtype(nbtype):
-    """
-    Return a numpy dtype instance corresponding to the given Numba type.
-    NotImplementedError is if no correspondence is known.
-    """
-    nbtype = types.unliteral(nbtype)
-    if isinstance(nbtype, (types.Complex, types.Integer, types.Float)):
-        return np.dtype(str(nbtype))
-    if isinstance(nbtype, (types.Boolean)):
-        return np.dtype("?")
-    if isinstance(nbtype, (types.NPDatetime, types.NPTimedelta)):
-        letter = _as_dtype_letters[type(nbtype)]
-        if nbtype.unit:
-            return np.dtype("%s[%s]" % (letter, nbtype.unit))
-        else:
-            return np.dtype(letter)
-    if isinstance(nbtype, (types.CharSeq, types.UnicodeCharSeq)):
-        letter = _as_dtype_letters[type(nbtype)]
-        return np.dtype("%s%d" % (letter, nbtype.count))
-    if isinstance(nbtype, types.Record):
-        return as_struct_dtype(nbtype)
-    if isinstance(nbtype, types.EnumMember):
-        return as_dtype(nbtype.dtype)
-    if isinstance(nbtype, types.npytypes.DType):
-        return as_dtype(nbtype.dtype)
-    if isinstance(nbtype, types.NumberClass):
-        return as_dtype(nbtype.dtype)
-    if isinstance(nbtype, types.NestedArray):
-        spec = (as_dtype(nbtype.dtype), tuple(nbtype.shape))
-        return np.dtype(spec)
-    if isinstance(nbtype, types.PyObject):
-        return np.dtype(object)
+def map_arrayscalar_type(val):
+    if isinstance(val, np.generic):
+        # We can't blindly call np.dtype() as it loses information
+        # on some types, e.g. datetime64 and timedelta64.
+        dtype = val.dtype
+    else:
+        try:
+            dtype = np.dtype(type(val))
+        except TypeError:
+            raise errors.NumbaNotImplementedError(
+                "no corresponding numpy dtype for %r" % type(val)
+            )
+    return from_dtype(dtype)
 
-    msg = f"{nbtype} cannot be represented as a NumPy dtype"
-    raise errors.NumbaNotImplementedError(msg)
+
+def is_array(val):
+    return isinstance(val, np.ndarray)
+
+
+def map_layout(val):
+    if val.flags["C_CONTIGUOUS"]:
+        layout = "C"
+    elif val.flags["F_CONTIGUOUS"]:
+        layout = "F"
+    else:
+        layout = "A"
+    return layout
 
 
 def select_array_wrapper(inputs):
@@ -418,7 +448,7 @@ def ufunc_find_matching_loop(ufunc, arg_types):
                         dt_unit, td_unit
                     )
                     if unit is None:
-                        raise errors.TypingError(
+                        raise TypingError(
                             f"ufunc '{ufunc_name}' is not "
                             + "supported between "
                             + f"datetime64[{dt_unit}] "
@@ -554,13 +584,6 @@ def from_struct_dtype(dtype):
     aligned = _is_aligned_struct(dtype)
 
     return types.Record(fields, size, aligned)
-
-
-def _ufunc_loop_sig(out_tys, in_tys):
-    if len(out_tys) == 1:
-        return signature(out_tys[0], *in_tys)
-    else:
-        return signature(types.Tuple(out_tys), *in_tys)
 
 
 def _get_bytes_buffer(ptr, nbytes):

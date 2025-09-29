@@ -6,6 +6,7 @@ import contextlib
 import enum
 import gc
 import math
+import platform
 import unittest
 import os
 import io
@@ -55,8 +56,19 @@ linux_only = unittest.skipIf(not sys.platform.startswith("linux"), _lnx_reason)
 _win_reason = "Windows only test"
 windows_only = unittest.skipIf(not sys.platform.startswith("win"), _win_reason)
 
+# fenv.h on M1 may have various issues:
+# https://github.com/numba/numba/issues/7822#issuecomment-1065356758
+_uname = platform.uname()
+IS_MACOS = _uname.system == "Darwin"
+skip_macos_fenv_errors = unittest.skipIf(
+    IS_MACOS, "fenv.h-like functionality unreliable on macOS"
+)
+IS_MACOS_ARM64 = IS_MACOS and _uname.machine == "arm64"
+
+
 IS_NUMPY_2 = numpy_support.numpy_version >= (2, 0)
 skip_if_numpy_2 = unittest.skipIf(IS_NUMPY_2, "Not supported on numpy 2.0+")
+
 
 # Typeguard
 has_typeguard = bool(os.environ.get("NUMBA_USE_TYPEGUARD", 0))
