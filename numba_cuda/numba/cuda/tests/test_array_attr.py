@@ -1,0 +1,435 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-2-Clause
+
+import numpy as np
+
+import unittest
+from numba.np.numpy_support import from_dtype
+from numba import typeof
+from numba.cuda import jit
+from numba.core import types
+from numba.tests.support import TestCase, MemoryLeakMixin
+from numba.core.errors import TypingError
+
+
+def array_dtype(a, res):
+    res[0] = a.dtype
+
+
+def use_dtype(a, b, res):
+    res[0] = a.view(b.dtype)[0]
+
+
+def dtype_eq_int64(a, res):
+    if a.dtype == np.dtype("int64"):
+        res[0] = 1
+    else:
+        res[0] = 0
+
+
+def array_itemsize(a, res):
+    res[0] = a.itemsize
+
+
+def array_nbytes(a, res):
+    res[0] = a.nbytes
+
+
+def array_shape(a, i, res):
+    res[0] = a.shape[i]
+
+
+def array_strides(a, i, res):
+    res[0] = a.strides[i]
+
+
+def array_ndim(a, res):
+    res[0] = a.ndim
+
+
+def array_size(a, res):
+    res[0] = a.size
+
+
+def array_flags_contiguous(a, res):
+    res[0] = a.flags.contiguous
+
+
+def array_flags_c_contiguous(a, res):
+    res[0] = a.flags.c_contiguous
+
+
+def array_flags_f_contiguous(a, res):
+    res[0] = a.flags.f_contiguous
+
+
+def nested_array_itemsize(a, res):
+    res[0] = a.f.itemsize
+
+
+def nested_array_nbytes(a, res):
+    res[0] = a.f.nbytes
+
+
+def nested_array_shape(a, res):
+    res[0] = a.f.shape[0]
+    res[1] = a.f.shape[1]
+
+
+def nested_array_strides(a, res):
+    res[0] = a.f.strides[0]
+    res[1] = a.f.strides[1]
+
+
+def nested_array_ndim(a, res):
+    res[0] = a.f.ndim
+
+
+def nested_array_size(a, res):
+    res[0] = a.f.size
+
+
+def size_after_slicing_usecase(buf, i, res):
+    sliced = buf[i]
+    # Make sure size attribute is not lost
+    res[0] = sliced.size
+
+
+def array_ctypes_data(arr, res):
+    res[0] = arr.ctypes.data
+
+
+def array_real(arr, res):
+    if arr.ndim == 2:
+        for i in range(arr.shape[0]):
+            res[i] = arr.real[i]
+    else:
+        for i in range(arr.shape[0]):
+            res[i] = arr.real[i]
+
+
+def array_imag(arr, res):
+    res[0] = arr.imag
+
+
+class TestArrayAttr(MemoryLeakMixin, TestCase):
+    def setUp(self):
+        super(TestArrayAttr, self).setUp()
+        self.a = np.arange(20, dtype=np.int32).reshape(4, 5)
+
+    def check_unary(self, pyfunc, arr):
+        out = np.zeros(1)
+        aryty = typeof(arr)
+        cfunc = self.get_cfunc(pyfunc, (aryty, typeof(out)))
+        cout = np.zeros(1)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertPreciseEqual(out[0], cout[0])
+        # Retry with forced any layout
+        cfunc = self.get_cfunc(pyfunc, (aryty.copy(layout="A"), typeof(out)))
+        cout = np.zeros(1)
+        cfunc[1, 1](arr, cout)
+        self.assertPreciseEqual(cout[0], out[0])
+
+    def check_unary_with_arrays(
+        self,
+        pyfunc,
+    ):
+        self.check_unary(pyfunc, self.a)
+        self.check_unary(pyfunc, self.a.T)
+        # 0-d array
+        arr = np.array([42]).reshape(())
+        self.check_unary(pyfunc, arr)
+        # array with an empty dimension
+        arr = np.zeros(0)
+        self.check_unary(pyfunc, arr)
+
+        # check with reshape
+        self.check_unary(pyfunc, arr.reshape((1, 0, 2)))
+
+    def get_cfunc(self, pyfunc, argspec):
+        return jit(argspec)(pyfunc)
+
+    def test_shape(self):
+        pyfunc = array_shape
+        cfunc = self.get_cfunc(
+            pyfunc, (types.int32[:, :], types.int32, types.float64[:])
+        )
+
+        for i in range(self.a.ndim):
+            out = np.zeros(1)
+            cout = np.zeros(1)
+            pyfunc(self.a, i, out)
+            cfunc[1, 1](self.a, i, cout)
+            self.assertEqual(out[0], cout[0])
+
+    def test_strides(self):
+        pyfunc = array_strides
+        cfunc = self.get_cfunc(
+            pyfunc, (types.int32[:, :], types.int32, types.float64[:])
+        )
+
+        for i in range(self.a.ndim):
+            out = np.zeros(1)
+            cout = np.zeros(1)
+            pyfunc(self.a, i, out)
+            cfunc[1, 1](self.a, i, cout)
+            self.assertEqual(out[0], cout[0])
+
+    def test_ndim(self):
+        self.check_unary_with_arrays(array_ndim)
+
+    def test_size(self):
+        self.check_unary_with_arrays(array_size)
+
+    def test_itemsize(self):
+        self.check_unary_with_arrays(array_itemsize)
+
+    def test_nbytes(self):
+        self.check_unary_with_arrays(array_nbytes)
+
+    # def test_dtype(self):
+    #     pyfunc = array_dtype
+    #     self.check_unary(pyfunc, self.a)
+    #     dtype = np.dtype([('x', np.int8), ('y', np.int8)])
+    #     arr = np.zeros(4, dtype=dtype)
+    #     self.check_unary(pyfunc, arr)
+
+    def test_use_dtype(self):
+        # Test using the dtype attribute inside the Numba function itself
+        b = np.empty(1, dtype=np.int16)
+        pyfunc = use_dtype
+        cfunc = self.get_cfunc(
+            pyfunc, (typeof(self.a), typeof(b), types.int16[:])
+        )
+        out = np.zeros(1, dtype=np.int16)
+        cout = np.zeros(1, dtype=np.int16)
+        pyfunc(self.a, b, out)
+        cfunc[1, 1](self.a, b, cout)
+        self.assertPreciseEqual(out[0], cout[0])
+
+    def test_dtype_equal(self):
+        # Test checking if a dtype is equal to another dtype
+        pyfunc = dtype_eq_int64
+        self.check_unary(pyfunc, np.empty(1, dtype=np.int16))
+        self.check_unary(pyfunc, np.empty(1, dtype=np.int64))
+
+    def test_flags_contiguous(self):
+        self.check_unary_with_arrays(array_flags_contiguous)
+
+    def test_flags_c_contiguous(self):
+        self.check_unary_with_arrays(array_flags_c_contiguous)
+
+    def test_flags_f_contiguous(self):
+        self.check_unary_with_arrays(array_flags_f_contiguous)
+
+
+class TestNestedArrayAttr(MemoryLeakMixin, unittest.TestCase):
+    def setUp(self):
+        super(TestNestedArrayAttr, self).setUp()
+        dtype = np.dtype([("a", np.int32), ("f", np.int32, (2, 5))])
+        self.a = np.recarray(1, dtype)[0]
+        self.nbrecord = from_dtype(self.a.dtype)
+
+    def get_cfunc(self, pyfunc):
+        return jit((self.nbrecord, types.float64[:]))(pyfunc)
+
+    def test_shape(self):
+        pyfunc = nested_array_shape
+        cfunc = self.get_cfunc(pyfunc)
+
+        out = np.zeros(2)
+        cout = np.zeros(2)
+        pyfunc(self.a, out)
+        cfunc[1, 1](self.a, cout)
+        self.assertEqual(out[0], cout[0])
+        self.assertEqual(out[1], cout[1])
+
+    def test_strides(self):
+        pyfunc = nested_array_strides
+        cfunc = self.get_cfunc(pyfunc)
+
+        out = np.zeros(2)
+        cout = np.zeros(2)
+        pyfunc(self.a, out)
+        cfunc[1, 1](self.a, cout)
+        self.assertEqual(out[0], cout[0])
+        self.assertEqual(out[1], cout[1])
+
+    def test_ndim(self):
+        pyfunc = nested_array_ndim
+        cfunc = self.get_cfunc(pyfunc)
+
+        out = np.zeros(1)
+        cout = np.zeros(1)
+        pyfunc(self.a, out)
+        cfunc[1, 1](self.a, cout)
+        self.assertEqual(out[0], cout[0])
+
+    def test_nbytes(self):
+        pyfunc = nested_array_nbytes
+        cfunc = self.get_cfunc(pyfunc)
+
+        out = np.zeros(1)
+        cout = np.zeros(1)
+        pyfunc(self.a, out)
+        cfunc[1, 1](self.a, cout)
+        self.assertEqual(out[0], cout[0])
+
+    def test_size(self):
+        pyfunc = nested_array_size
+        cfunc = self.get_cfunc(pyfunc)
+
+        out = np.zeros(1)
+        cout = np.zeros(1)
+        pyfunc(self.a, out)
+        cfunc[1, 1](self.a, cout)
+        self.assertEqual(out[0], cout[0])
+
+    def test_itemsize(self):
+        pyfunc = nested_array_itemsize
+        cfunc = self.get_cfunc(pyfunc)
+
+        out = np.zeros(1)
+        cout = np.zeros(1)
+        pyfunc(self.a, out)
+        cfunc[1, 1](self.a, cout)
+        self.assertEqual(out[0], cout[0])
+
+
+class TestSlicedArrayAttr(MemoryLeakMixin, unittest.TestCase):
+    def test_size_after_slicing(self):
+        pyfunc = size_after_slicing_usecase
+        cfunc = jit(pyfunc)
+        arr = np.arange(2 * 5).reshape(2, 5)
+        for i in range(arr.shape[0]):
+            out = np.zeros(1)
+            cout = np.zeros(1)
+            pyfunc(arr, i, out)
+            cfunc[1, 1](arr, i, cout)
+            self.assertEqual(out[0], cout[0])
+        arr = np.arange(2 * 5 * 3).reshape(2, 5, 3)
+        for i in range(arr.shape[0]):
+            out = np.zeros(1)
+            cout = np.zeros(1)
+            pyfunc(arr, i, out)
+            cfunc[1, 1](arr, i, cout)
+            self.assertEqual(out[0], cout[0])
+
+
+class TestArrayCTypes(MemoryLeakMixin, TestCase):
+    _numba_parallel_test_ = False
+
+    def test_array_ctypes_data(self):
+        pyfunc = array_ctypes_data
+        cfunc = jit(pyfunc)
+        arr = np.arange(3)
+        out = np.zeros(1)
+        cout = np.zeros(1)
+        pyfunc(arr, out)
+        cfunc[1, 1](arr, cout)
+        self.assertEqual(out[0], cout[0])
+
+
+class TestRealImagAttr(MemoryLeakMixin, TestCase):
+    def check_complex(self, pyfunc):
+        cfunc = jit(pyfunc)
+        # test 1D
+        size = 10
+        arr = np.arange(size) + np.arange(size) * 10j
+        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        # test 2D
+        arr = arr.reshape(2, 5)
+        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+
+    def test_complex_real(self):
+        self.check_complex(array_real)
+
+    def test_complex_imag(self):
+        self.check_complex(array_imag)
+
+    def check_number_real(self, dtype):
+        pyfunc = array_real
+        cfunc = jit(pyfunc)
+        # test 1D
+        size = 10
+        arr = np.arange(size, dtype=dtype)
+        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        # test 2D
+        arr = arr.reshape(2, 5)
+        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        # test identity
+        self.assertEqual(arr.data, pyfunc(arr).data)
+        self.assertEqual(arr.data, cfunc(arr).data)
+        # test writable
+        real = cfunc(arr)
+        self.assertNotEqual(arr[0, 0], 5)
+        real[0, 0] = 5
+        self.assertEqual(arr[0, 0], 5)
+
+    def test_number_real(self):
+        """
+        Testing .real of non-complex dtypes
+        """
+        for dtype in [np.uint8, np.int32, np.float32, np.float64]:
+            self.check_number_real(dtype)
+
+    def check_number_imag(self, dtype):
+        pyfunc = array_imag
+        cfunc = jit(pyfunc)
+        # test 1D
+        size = 10
+        arr = np.arange(size, dtype=dtype)
+        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        # test 2D
+        arr = arr.reshape(2, 5)
+        self.assertPreciseEqual(pyfunc(arr), cfunc(arr))
+        # test are zeros
+        self.assertEqual(cfunc(arr).tolist(), np.zeros_like(arr).tolist())
+        # test readonly
+        imag = cfunc(arr)
+        with self.assertRaises(ValueError) as raises:
+            imag[0] = 1
+        self.assertEqual(
+            "assignment destination is read-only", str(raises.exception)
+        )
+
+    def test_number_imag(self):
+        """
+        Testing .imag of non-complex dtypes
+        """
+        for dtype in [np.uint8, np.int32, np.float32, np.float64]:
+            self.check_number_imag(dtype)
+
+    def test_record_real(self):
+        rectyp = np.dtype([("real", np.float32), ("imag", np.complex64)])
+        arr = np.zeros(3, dtype=rectyp)
+        arr["real"] = np.random.random(arr.size)
+        arr["imag"] = np.random.random(arr.size) * 1.3j
+
+        # check numpy behavior
+        # .real is identity
+        self.assertIs(array_real(arr), arr)
+        # .imag is zero_like
+        self.assertEqual(array_imag(arr).tolist(), np.zeros_like(arr).tolist())
+
+        # check numba behavior
+        # it's most likely a user error, anyway
+        jit_array_real = jit(array_real)
+        jit_array_imag = jit(array_imag)
+
+        with self.assertRaises(TypingError) as raises:
+            jit_array_real(arr)
+        self.assertIn(
+            "cannot access .real of array of Record", str(raises.exception)
+        )
+
+        with self.assertRaises(TypingError) as raises:
+            jit_array_imag(arr)
+        self.assertIn(
+            "cannot access .imag of array of Record", str(raises.exception)
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
