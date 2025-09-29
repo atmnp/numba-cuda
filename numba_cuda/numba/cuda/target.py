@@ -171,8 +171,8 @@ class CUDATargetContext(BaseContext):
         from numba.cuda.cpython import builtins as cpython_builtins
         from numba.core import optional  # noqa: F401
         from numba.misc import cffiimpl
-        from numba.cuda.np import arrayobj  # noqa: F401
-        from numba.cuda.np import npdatetime  # noqa: F401
+        from numba.cuda.np import arrayobj, npdatetime, arraymath, npyimpl
+        from numba.cuda.np.polynomial import polynomial_core
         from . import (
             cudaimpl,
             fp16,
@@ -207,6 +207,11 @@ class CUDATargetContext(BaseContext):
         self.install_registry(unicode.registry)
         self.install_registry(charseq.registry)
         self.install_registry(cpython_builtins.registry)
+        self.install_registry(arrayobj.registry)
+        self.install_registry(npdatetime.registry)
+        self.install_registry(arraymath.registry)
+        self.install_registry(polynomial_core.registry)
+        self.install_registry(npyimpl.registry)
 
     def codegen(self):
         return self._internal_codegen

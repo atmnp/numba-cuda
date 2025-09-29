@@ -2,14 +2,13 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 from numba.cuda.extending import (
-    models,
+    core_models,
     register_model,
     type_callable,
     unbox,
     NativeValue,
     make_attribute_wrapper,
     box,
-    lower_builtin,
 )
 from numba.core import types
 from numba.cuda import cgutils
@@ -19,10 +18,14 @@ from numpy.polynomial.polynomial import Polynomial
 from contextlib import ExitStack
 import numpy as np
 from llvmlite import ir
+from numba.core.imputils import Registry
+
+registry = Registry("np.polynomial_core")
+lower = registry.lower
 
 
 @register_model(types.PolynomialType)
-class PolynomialModel(models.StructModel):
+class PolynomialModel(core_models.StructModel):
     def __init__(self, dmm, fe_type):
         members = [
             ("coef", fe_type.coef),
@@ -83,7 +86,7 @@ make_attribute_wrapper(types.PolynomialType, "window", "window")
 # make_attribute_wrapper(types.PolynomialType, 'symbol', 'symbol')
 
 
-@lower_builtin(Polynomial, types.Array)
+@lower(Polynomial, types.Array)
 def impl_polynomial1(context, builder, sig, args):
     def to_double(arr):
         return np.asarray(arr, dtype=np.double)
@@ -106,7 +109,7 @@ def impl_polynomial1(context, builder, sig, args):
     return polynomial._getvalue()
 
 
-@lower_builtin(Polynomial, types.Array, types.Array, types.Array)
+@lower(Polynomial, types.Array, types.Array, types.Array)
 def impl_polynomial3(context, builder, sig, args):
     def to_double(coef):
         return np.asarray(coef, dtype=np.double)

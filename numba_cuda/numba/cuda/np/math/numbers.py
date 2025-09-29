@@ -12,7 +12,7 @@ from llvmlite.ir import Constant
 from numba.core.imputils import impl_ret_untracked
 from numba.core import typing, types, errors
 from numba.cuda import cgutils
-from numba.cpython.unsafe.numbers import viewer
+from numba.cuda.cpython.unsafe.numbers import viewer
 
 
 def _int_arith_flags(rettype):
@@ -909,7 +909,7 @@ def real_abs_impl(context, builder, sig, args):
 
 
 def real_negate_impl(context, builder, sig, args):
-    from numba.cpython import mathimpl
+    from numba.cuda.cpython import mathimpl
 
     res = mathimpl.negate_real(builder, args[0])
     return impl_ret_untracked(context, builder, sig.return_type, res)
@@ -1001,7 +1001,7 @@ def complex_imag_impl(context, builder, typ, value):
 
 # @lower_builtin("complex.conjugate", types.Complex)
 def complex_conjugate_impl(context, builder, sig, args):
-    from numba.cpython import mathimpl
+    from numba.cuda.cpython import mathimpl
 
     z = context.make_complex(builder, sig.args[0], args[0])
     z.imag = mathimpl.negate_real(builder, z.imag)
@@ -1165,7 +1165,7 @@ def complex_div_impl(context, builder, sig, args):
 
 
 def complex_negate_impl(context, builder, sig, args):
-    from numba.cpython import mathimpl
+    from numba.cuda.cpython import mathimpl
 
     [typ] = sig.args
     [val] = args

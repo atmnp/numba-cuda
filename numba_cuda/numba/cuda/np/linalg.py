@@ -14,8 +14,8 @@ import operator
 
 from numba.core.imputils import impl_ret_borrowed, impl_ret_new_ref
 from numba.cuda.typing import signature
-from numba.core.extending import intrinsic, overload, register_jitable
-from numba.core import types, config
+from numba.cuda.extending import intrinsic, overload, register_jitable
+from numba.core import types
 from numba.cuda import cgutils
 from numba.core.errors import (
     TypingError,
@@ -38,26 +38,15 @@ ll_intp_p = intp_t.as_pointer()
 # _lapack.c and is present to accommodate potential future 64bit int
 # based LAPACK use.
 F_INT_nptype = np.int32
-if config.USE_LEGACY_TYPE_SYSTEM:
-    F_INT_nbtype = types.int32
+F_INT_nbtype = types.int32
 
-    # BLAS kinds as letters
-    _blas_kinds = {
-        types.float32: "s",
-        types.float64: "d",
-        types.complex64: "c",
-        types.complex128: "z",
-    }
-else:
-    F_INT_nbtype = types.np_int32
-
-    # BLAS kinds as letters
-    _blas_kinds = {
-        types.np_float32: "s",
-        types.np_float64: "d",
-        types.np_complex64: "c",
-        types.np_complex128: "z",
-    }
+# BLAS kinds as letters
+_blas_kinds = {
+    types.float32: "s",
+    types.float64: "d",
+    types.complex64: "c",
+    types.complex128: "z",
+}
 
 
 def get_blas_kind(dtype, func_name="<BLAS function>"):
@@ -994,12 +983,7 @@ def dot_3(left, right, out):
         return lambda left, right, out: _impl(left, right, out)
 
 
-if config.USE_LEGACY_TYPE_SYSTEM:
-    fatal_error_func = types.ExternalFunction("numba_fatal_error", types.intc())
-else:
-    fatal_error_func = types.ExternalFunction(
-        "numba_fatal_error", types.c_intp()
-    )
+fatal_error_func = types.ExternalFunction("numba_fatal_error", types.intc())
 
 
 @register_jitable

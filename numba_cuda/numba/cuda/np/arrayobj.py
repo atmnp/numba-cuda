@@ -37,21 +37,16 @@ from numba.cuda.np.numpy_support import (
     is_nonelike,
 )
 from numba.core.imputils import (
-    lower_builtin,
-    lower_getattr,
-    lower_getattr_generic,
-    lower_setattr_generic,
-    lower_cast,
-    lower_constant,
     iternext_impl,
     impl_ret_borrowed,
     impl_ret_new_ref,
     impl_ret_untracked,
     RefType,
+    Registry,
 )
 from numba.cuda.typing import signature
 from numba.core.types import StringLiteral
-from numba.core.extending import (
+from numba.cuda.extending import (
     register_jitable,
     overload,
     overload_method,
@@ -59,9 +54,12 @@ from numba.core.extending import (
     overload_attribute,
 )
 from numba.misc import quicksort, mergesort
-from numba.cpython import slicing
-from numba.cpython.unsafe.tuple import tuple_setitem, build_full_slice_tuple
-from numba.core.extending import overload_classmethod
+from numba.cuda.cpython import slicing
+from numba.cuda.cpython.unsafe.tuple import (
+    tuple_setitem,
+    build_full_slice_tuple,
+)
+from numba.cuda.extending import overload_classmethod
 from numba.core.typing.npydecl import (
     parse_dtype as ty_parse_dtype,
     parse_shape as ty_parse_shape,
@@ -69,6 +67,15 @@ from numba.core.typing.npydecl import (
     _sequence_of_arrays,
     _choose_concatenation_layout,
 )
+
+registry = Registry("arrayobj")
+lower = registry.lower
+lower_cast = registry.lower_cast
+lower_constant = registry.lower_constant
+lower_getattr = registry.lower_getattr
+lower_getattr_generic = registry.lower_getattr_generic
+lower_setattr = registry.lower_setattr
+lower_setattr_generic = registry.lower_setattr_generic
 
 
 def set_range_metadata(builder, load, lower_bound, upper_bound):
@@ -338,7 +345,7 @@ def normalize_axis_overloads(func_name, arg_name, ndim, axis):
     return impl
 
 
-@lower_builtin("getiter", types.Buffer)
+@lower("getiter", types.Buffer)
 def getiter_array(context, builder, sig, args):
     [arrayty] = sig.args
     [array] = args
@@ -391,7 +398,7 @@ def _getitem_array_single_int(context, builder, return_type, aryty, ary, idx):
         return load_item(context, builder, aryty, dataptr)
 
 
-@lower_builtin("iternext", types.ArrayIterator)
+@lower("iternext", types.ArrayIterator)
 @iternext_impl(RefType.BORROWED)
 def iternext_array(context, builder, sig, args, result):
     [iterty] = sig.args
@@ -549,8 +556,8 @@ def _getitem_array_generic(
         return load_item(context, builder, aryty, dataptr)
 
 
-@lower_builtin(operator.getitem, types.Buffer, types.Integer)
-@lower_builtin(operator.getitem, types.Buffer, types.SliceType)
+@lower(operator.getitem, types.Buffer, types.Integer)
+@lower(operator.getitem, types.Buffer, types.SliceType)
 def getitem_arraynd_intp(context, builder, sig, args):
     """
     Basic indexing with an integer or a slice.
@@ -567,7 +574,7 @@ def getitem_arraynd_intp(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin(operator.getitem, types.Buffer, types.BaseTuple)
+@lower(operator.getitem, types.Buffer, types.BaseTuple)
 def getitem_array_tuple(context, builder, sig, args):
     """
     Basic or advanced indexing with a tuple.
@@ -595,7 +602,7 @@ def getitem_array_tuple(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin(operator.setitem, types.Buffer, types.Any, types.Any)
+@lower(operator.setitem, types.Buffer, types.Any, types.Any)
 def setitem_array(context, builder, sig, args):
     """
     array[a] = scalar_or_array
@@ -642,7 +649,7 @@ def setitem_array(context, builder, sig, args):
     store_item(context, builder, aryty, val, dataptr)
 
 
-@lower_builtin(len, types.Buffer)
+@lower(len, types.Buffer)
 def array_len(context, builder, sig, args):
     (aryty,) = sig.args
     (ary,) = args
@@ -653,7 +660,7 @@ def array_len(context, builder, sig, args):
     return impl_ret_untracked(context, builder, sig.return_type, res)
 
 
-@lower_builtin("array.item", types.Array)
+@lower("array.item", types.Array)
 def array_item(context, builder, sig, args):
     (aryty,) = sig.args
     (ary,) = args
@@ -671,7 +678,7 @@ def array_item(context, builder, sig, args):
 
 if numpy_version < (2, 0):
 
-    @lower_builtin("array.itemset", types.Array, types.Any)
+    @lower("array.itemset", types.Array, types.Any)
     def array_itemset(context, builder, sig, args):
         aryty, valty = sig.args
         ary, val = args
@@ -1250,7 +1257,7 @@ def fancy_getitem(
     return impl_ret_new_ref(context, builder, out_ty, out._getvalue())
 
 
-@lower_builtin(operator.getitem, types.Buffer, types.Array)
+@lower(operator.getitem, types.Buffer, types.Array)
 def fancy_getitem_array(context, builder, sig, args):
     """
     Advanced or basic indexing with an array.
@@ -2050,7 +2057,7 @@ def vararg_to_tuple(context, builder, sig, args):
     return new_sig, new_args
 
 
-@lower_builtin("array.transpose", types.Array)
+@lower("array.transpose", types.Array)
 def array_transpose(context, builder, sig, args):
     return array_T(context, builder, sig.args[0], args[0])
 
@@ -2071,7 +2078,7 @@ def permute_arrays(axis, shape, strides):
 
 # Transposing an array involves permuting the shape and strides of the array
 # based on the given axes.
-@lower_builtin("array.transpose", types.Array, types.BaseTuple)
+@lower("array.transpose", types.Array, types.BaseTuple)
 def array_transpose_tuple(context, builder, sig, args):
     aryty = sig.args[0]
     ary = make_array(aryty)(context, builder, args[0])
@@ -2133,7 +2140,7 @@ def array_transpose_tuple(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin("array.transpose", types.Array, types.VarArg(types.Any))
+@lower("array.transpose", types.Array, types.VarArg(types.Any))
 def array_transpose_vararg(context, builder, sig, args):
     new_sig, new_args = vararg_to_tuple(context, builder, sig, args)
     return array_transpose_tuple(context, builder, new_sig, new_args)
@@ -2388,7 +2395,7 @@ def normalize_reshape_value(origsize, shape):
         raise ValueError("multiple negative shape values")
 
 
-@lower_builtin("array.reshape", types.Array, types.BaseTuple)
+@lower("array.reshape", types.Array, types.BaseTuple)
 def array_reshape(context, builder, sig, args):
     aryty = sig.args[0]
     retty = sig.return_type
@@ -2461,7 +2468,7 @@ def array_reshape(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin("array.reshape", types.Array, types.VarArg(types.Any))
+@lower("array.reshape", types.Array, types.VarArg(types.Any))
 def array_reshape_vararg(context, builder, sig, args):
     new_sig, new_args = vararg_to_tuple(context, builder, sig, args)
     return array_reshape(context, builder, new_sig, new_args)
@@ -2562,7 +2569,7 @@ def np_append(arr, values, axis=None):
     return impl
 
 
-@lower_builtin("array.ravel", types.Array)
+@lower("array.ravel", types.Array)
 def array_ravel(context, builder, sig, args):
     # Only support no argument version (default order='C')
     def imp_nocopy(ary):
@@ -2585,7 +2592,7 @@ def array_ravel(context, builder, sig, args):
     return res
 
 
-@lower_builtin(np.ravel, types.Array)
+@lower(np.ravel, types.Array)
 def np_ravel(context, builder, sig, args):
     def np_ravel_impl(a):
         return a.ravel()
@@ -2593,7 +2600,7 @@ def np_ravel(context, builder, sig, args):
     return context.compile_internal(builder, np_ravel_impl, sig, args)
 
 
-@lower_builtin("array.flatten", types.Array)
+@lower("array.flatten", types.Array)
 def array_flatten(context, builder, sig, args):
     # Only support flattening to C layout currently.
     def imp(ary):
@@ -3090,7 +3097,7 @@ def ol_compatible_view(a, dtype):
     return impl
 
 
-@lower_builtin("array.view", types.Array, types.DTypeSpec)
+@lower("array.view", types.Array, types.DTypeSpec)
 def array_view(context, builder, sig, args):
     aryty = sig.args[0]
     retty = sig.return_type
@@ -3431,7 +3438,7 @@ lower_getattr(types.DType, "kind")(dtype_type)
 # static_getitem on Numba numerical types to create "array" types
 
 
-@lower_builtin("static_getitem", types.NumberClass, types.Any)
+@lower("static_getitem", types.NumberClass, types.Any)
 def static_getitem_number_clazz(context, builder, sig, args):
     """This handles the "static_getitem" when a Numba type is subscripted e.g:
     var = typed.List.empty_list(float64[::1, :])
@@ -3521,7 +3528,7 @@ def array_record_getattr(context, builder, typ, value, attr):
     return impl_ret_borrowed(context, builder, resty, res)
 
 
-@lower_builtin("static_getitem", types.Array, types.StringLiteral)
+@lower("static_getitem", types.Array, types.StringLiteral)
 def array_record_getitem(context, builder, sig, args):
     index = args[1]
     if not isinstance(index, str):
@@ -3606,7 +3613,7 @@ def record_setattr(context, builder, sig, args, attr):
         context.pack_value(builder, elemty, val, dptr, align=align)
 
 
-@lower_builtin("static_getitem", types.Record, types.StringLiteral)
+@lower("static_getitem", types.Record, types.StringLiteral)
 def record_static_getitem_str(context, builder, sig, args):
     """
     Record.__getitem__ redirects to getattr()
@@ -3615,7 +3622,7 @@ def record_static_getitem_str(context, builder, sig, args):
     return impl(context, builder, sig.args[0], args[0], args[1])
 
 
-@lower_builtin("static_getitem", types.Record, types.IntegerLiteral)
+@lower("static_getitem", types.Record, types.IntegerLiteral)
 def record_static_getitem_int(context, builder, sig, args):
     """
     Record.__getitem__ redirects to getattr()
@@ -3627,7 +3634,7 @@ def record_static_getitem_int(context, builder, sig, args):
     return impl(context, builder, sig.args[0], args[0], fields[idx])
 
 
-@lower_builtin("static_setitem", types.Record, types.StringLiteral, types.Any)
+@lower("static_setitem", types.Record, types.StringLiteral, types.Any)
 def record_static_setitem_str(context, builder, sig, args):
     """
     Record.__setitem__ redirects to setattr()
@@ -3640,7 +3647,7 @@ def record_static_setitem_str(context, builder, sig, args):
     return impl(builder, (rec, val))
 
 
-@lower_builtin("static_setitem", types.Record, types.IntegerLiteral, types.Any)
+@lower("static_setitem", types.Record, types.IntegerLiteral, types.Any)
 def record_static_setitem_int(context, builder, sig, args):
     """
     Record.__setitem__ redirects to setattr()
@@ -3689,7 +3696,7 @@ def constant_bytes(context, builder, ty, pyval):
 # Comparisons
 
 
-@lower_builtin(operator.is_, types.Array, types.Array)
+@lower(operator.is_, types.Array, types.Array)
 def array_is(context, builder, sig, args):
     aty, bty = sig.args
     if aty != bty:
@@ -4455,7 +4462,7 @@ def make_array_flatiter(context, builder, arrty, arr):
     return impl_ret_borrowed(context, builder, types.NumpyFlatType(arrty), res)
 
 
-@lower_builtin("iternext", types.NumpyFlatType)
+@lower("iternext", types.NumpyFlatType)
 @iternext_impl(RefType.BORROWED)
 def iternext_numpy_flatiter(context, builder, sig, args, result):
     [flatiterty] = sig.args
@@ -4471,7 +4478,7 @@ def iternext_numpy_flatiter(context, builder, sig, args, result):
     flatiter.iternext_specific(context, builder, arrty, arr, result)
 
 
-@lower_builtin(operator.getitem, types.NumpyFlatType, types.Integer)
+@lower(operator.getitem, types.NumpyFlatType, types.Integer)
 def iternext_numpy_getitem(context, builder, sig, args):
     flatiterty = sig.args[0]
     flatiter, index = args
@@ -4487,7 +4494,7 @@ def iternext_numpy_getitem(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin(operator.setitem, types.NumpyFlatType, types.Integer, types.Any)
+@lower(operator.setitem, types.NumpyFlatType, types.Integer, types.Any)
 def iternext_numpy_getitem_any(context, builder, sig, args):
     flatiterty = sig.args[0]
     flatiter, index, value = args
@@ -4503,7 +4510,7 @@ def iternext_numpy_getitem_any(context, builder, sig, args):
     return context.get_dummy_value()
 
 
-@lower_builtin(len, types.NumpyFlatType)
+@lower(len, types.NumpyFlatType)
 def iternext_numpy_getitem_flat(context, builder, sig, args):
     flatiterty = sig.args[0]
     flatitercls = make_array_flat_cls(flatiterty)
@@ -4514,7 +4521,7 @@ def iternext_numpy_getitem_flat(context, builder, sig, args):
     return arr.nitems
 
 
-@lower_builtin(np.ndenumerate, types.Array)
+@lower(np.ndenumerate, types.Array)
 def make_array_ndenumerate(context, builder, sig, args):
     (arrty,) = sig.args
     (arr,) = args
@@ -4532,7 +4539,7 @@ def make_array_ndenumerate(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin("iternext", types.NumpyNdEnumerateType)
+@lower("iternext", types.NumpyNdEnumerateType)
 @iternext_impl(RefType.BORROWED)
 def iternext_numpy_nditer(context, builder, sig, args, result):
     [nditerty] = sig.args
@@ -4548,8 +4555,8 @@ def iternext_numpy_nditer(context, builder, sig, args, result):
     nditer.iternext_specific(context, builder, arrty, arr, result)
 
 
-@lower_builtin(pndindex, types.VarArg(types.Integer))
-@lower_builtin(np.ndindex, types.VarArg(types.Integer))
+@lower(pndindex, types.VarArg(types.Integer))
+@lower(np.ndindex, types.VarArg(types.Integer))
 def make_array_ndindex(context, builder, sig, args):
     """ndindex(*shape)"""
     shape = [
@@ -4565,8 +4572,8 @@ def make_array_ndindex(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin(pndindex, types.BaseTuple)
-@lower_builtin(np.ndindex, types.BaseTuple)
+@lower(pndindex, types.BaseTuple)
+@lower(np.ndindex, types.BaseTuple)
 def make_array_ndindex_tuple(context, builder, sig, args):
     """ndindex(shape)"""
     ndim = sig.return_type.ndim
@@ -4587,7 +4594,7 @@ def make_array_ndindex_tuple(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin("iternext", types.NumpyNdIndexType)
+@lower("iternext", types.NumpyNdIndexType)
 @iternext_impl(RefType.BORROWED)
 def iternext_numpy_ndindex(context, builder, sig, args, result):
     [nditerty] = sig.args
@@ -4599,7 +4606,7 @@ def iternext_numpy_ndindex(context, builder, sig, args, result):
     nditer.iternext_specific(context, builder, result)
 
 
-@lower_builtin(np.nditer, types.Any)
+@lower(np.nditer, types.Any)
 def make_array_nditer(context, builder, sig, args):
     """
     nditer(...)
@@ -4619,7 +4626,7 @@ def make_array_nditer(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, nditerty, res)
 
 
-@lower_builtin("iternext", types.NumpyNdIterType)
+@lower("iternext", types.NumpyNdIterType)
 @iternext_impl(RefType.BORROWED)
 def iternext_numpy_nditer2(context, builder, sig, args, result):
     [nditerty] = sig.args
@@ -4629,7 +4636,7 @@ def iternext_numpy_nditer2(context, builder, sig, args, result):
     nditer.iternext_specific(context, builder, result)
 
 
-@lower_builtin(operator.eq, types.DType, types.DType)
+@lower(operator.eq, types.DType, types.DType)
 def dtype_eq_impl(context, builder, sig, args):
     arg1, arg2 = sig.args
     res = ir.Constant(ir.IntType(1), int(arg1 == arg2))
@@ -5518,7 +5525,7 @@ def _array_copy_intrinsic(typingctx, a):
     return sig, _array_copy
 
 
-@lower_builtin("array.copy", types.Array)
+@lower("array.copy", types.Array)
 def array_copy(context, builder, sig, args):
     return _array_copy(context, builder, sig, args)
 
@@ -5662,8 +5669,8 @@ def array_asfortranarray(a):
         return impl
 
 
-@lower_builtin("array.astype", types.Array, types.DTypeSpec)
-@lower_builtin("array.astype", types.Array, types.StringLiteral)
+@lower("array.astype", types.Array, types.DTypeSpec)
+@lower("array.astype", types.Array, types.StringLiteral)
 def array_astype(context, builder, sig, args):
     arytype = sig.args[0]
     ary = make_array(arytype)(context, builder, value=args[0])
@@ -7169,7 +7176,7 @@ def lt_implementation(dtype):
         return default_lt
 
 
-@lower_builtin("array.sort", types.Array)
+@lower("array.sort", types.Array)
 def array_sort(context, builder, sig, args):
     arytype = sig.args[0]
 
@@ -7197,8 +7204,8 @@ def impl_np_sort(a):
     return np_sort_impl
 
 
-@lower_builtin("array.argsort", types.Array, types.StringLiteral)
-@lower_builtin(np.argsort, types.Array, types.StringLiteral)
+@lower("array.argsort", types.Array, types.StringLiteral)
+@lower(np.argsort, types.Array, types.StringLiteral)
 def array_argsort(context, builder, sig, args):
     arytype, kind = sig.args
 
@@ -7286,7 +7293,7 @@ def type_reshape_unchecked(context):
     return typer
 
 
-@lower_builtin(reshape_unchecked, types.Array, types.BaseTuple, types.BaseTuple)
+@lower(reshape_unchecked, types.Array, types.BaseTuple, types.BaseTuple)
 def impl_shape_unchecked(context, builder, sig, args):
     aryty = sig.args[0]
     retty = sig.return_type

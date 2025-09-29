@@ -24,7 +24,7 @@ from numba.cuda.utils import cached_file_read
 from numba.cuda.cudadrv.linkable_code import CUSource
 from numba.cuda.typing.templates import signature
 
-from numba.core.extending import intrinsic, overload_classmethod
+from numba.cuda.extending import intrinsic, overload_classmethod
 
 
 def get_include():

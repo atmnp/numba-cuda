@@ -16,7 +16,7 @@ from numba.core.imputils import (
     impl_ret_untracked,
 )
 from numba.cuda.typing import signature
-from numba.core.extending import (
+from numba.cuda.extending import (
     intrinsic,
     overload,
     overload_attribute,

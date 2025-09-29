@@ -8,7 +8,7 @@ operations with tuple and workarounds for limitations enforced in userland.
 
 from numba.core import types, typing, errors
 from numba.cuda.cgutils import alloca_once
-from numba.core.extending import intrinsic
+from numba.cuda.extending import intrinsic
 
 
 @intrinsic

@@ -26,10 +26,10 @@ from numba.cuda.np.numpy_support import (
     lt_complex,
 )
 from numba.core.imputils import (
-    lower_builtin,
     impl_ret_borrowed,
     impl_ret_new_ref,
     impl_ret_untracked,
+    Registry,
 )
 from numba.cuda.np.arrayobj import (
     make_array,
@@ -48,6 +48,9 @@ from numba.core.errors import (
     NumbaTypeError,
 )
 from numba.cuda.cpython.unsafe.tuple import tuple_setitem
+
+registry = Registry("np.arraymath")
+lower = registry.lower
 
 
 def _check_blas():
@@ -183,8 +186,8 @@ def _gen_index_tuple(tyctx, shape_tuple, value, axis):
 # Basic stats and aggregates
 
 
-@lower_builtin(np.sum, types.Array)
-@lower_builtin("array.sum", types.Array)
+@lower(np.sum, types.Array)
+@lower("array.sum", types.Array)
 def array_sum(context, builder, sig, args):
     zero = sig.return_type(0)
 
@@ -274,10 +277,10 @@ def gen_sum_axis_impl(is_axis_const, const_axis_val, op, zero):
     return inner
 
 
-@lower_builtin(np.sum, types.Array, types.intp, types.DTypeSpec)
-@lower_builtin(np.sum, types.Array, types.IntegerLiteral, types.DTypeSpec)
-@lower_builtin("array.sum", types.Array, types.intp, types.DTypeSpec)
-@lower_builtin("array.sum", types.Array, types.IntegerLiteral, types.DTypeSpec)
+@lower(np.sum, types.Array, types.intp, types.DTypeSpec)
+@lower(np.sum, types.Array, types.IntegerLiteral, types.DTypeSpec)
+@lower("array.sum", types.Array, types.intp, types.DTypeSpec)
+@lower("array.sum", types.Array, types.IntegerLiteral, types.DTypeSpec)
 def array_sum_axis_dtype(context, builder, sig, args):
     retty = sig.return_type
     zero = getattr(retty, "dtype", retty)(0)
@@ -317,8 +320,8 @@ def array_sum_axis_dtype(context, builder, sig, args):
     return impl_ret_new_ref(context, builder, sig.return_type, res)
 
 
-@lower_builtin(np.sum, types.Array, types.DTypeSpec)
-@lower_builtin("array.sum", types.Array, types.DTypeSpec)
+@lower(np.sum, types.Array, types.DTypeSpec)
+@lower("array.sum", types.Array, types.DTypeSpec)
 def array_sum_dtype(context, builder, sig, args):
     zero = sig.return_type(0)
 
@@ -334,10 +337,10 @@ def array_sum_dtype(context, builder, sig, args):
     return impl_ret_borrowed(context, builder, sig.return_type, res)
 
 
-@lower_builtin(np.sum, types.Array, types.intp)
-@lower_builtin(np.sum, types.Array, types.IntegerLiteral)
-@lower_builtin("array.sum", types.Array, types.intp)
-@lower_builtin("array.sum", types.Array, types.IntegerLiteral)
+@lower(np.sum, types.Array, types.intp)
+@lower(np.sum, types.Array, types.IntegerLiteral)
+@lower("array.sum", types.Array, types.intp)
+@lower("array.sum", types.Array, types.IntegerLiteral)
 def array_sum_axis(context, builder, sig, args):
     retty = sig.return_type
     zero = getattr(retty, "dtype", retty)(0)
@@ -3376,8 +3379,8 @@ def ov_np_angle(z, deg=False):
         )
 
 
-@lower_builtin(np.nonzero, types.Array)
-@lower_builtin("array.nonzero", types.Array)
+@lower(np.nonzero, types.Array)
+@lower("array.nonzero", types.Array)
 def array_nonzero(context, builder, sig, args):
     aryty = sig.args[0]
     # Return type is a N-tuple of 1D C-contiguous arrays
@@ -4968,7 +4971,7 @@ def np_cross(a, b):
                 (
                     "Dimensions for both inputs is 2.\n"
                     "Please replace your numpy.cross(a, b) call with "
-                    "a call to `cross2d(a, b)` from `numba.np.extensions`."
+                    "a call to `cross2d(a, b)` from `numba.cuda.np.extensions`."
                 )
             )
 

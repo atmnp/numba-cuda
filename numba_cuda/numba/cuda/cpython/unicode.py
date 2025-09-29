@@ -8,13 +8,13 @@ import numpy as np
 from llvmlite.ir import IntType, Constant
 
 from numba.cuda.cgutils import is_nonelike
-from numba.core.extending import (
+from numba.cuda.extending import (
     NativeValue,
     overload,
     overload_method,
     register_jitable,
-    models,
 )
+from numba.cuda.extending import core_models
 from numba.cuda.core.pythonapi import box, unbox
 from numba.cuda.extending import make_attribute_wrapper, intrinsic
 from numba.cuda.models import register_model
@@ -95,7 +95,7 @@ _BLOOM_WIDTH = types.intp.bitwidth
 
 
 @register_model(types.UnicodeType)
-class UnicodeModel(models.StructModel):
+class UnicodeModel(core_models.StructModel):
     def __init__(self, dmm, fe_type):
         members = [
             ("data", types.voidptr),
@@ -107,7 +107,7 @@ class UnicodeModel(models.StructModel):
             # A pointer to the owner python str/unicode object
             ("parent", types.pyobject),
         ]
-        models.StructModel.__init__(self, dmm, fe_type, members)
+        core_models.StructModel.__init__(self, dmm, fe_type, members)
 
 
 make_attribute_wrapper(types.UnicodeType, "data", "_data")

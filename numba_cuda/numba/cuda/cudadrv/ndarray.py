@@ -8,7 +8,7 @@ operations with numpy.
 
 from numba.core import types, typing
 from numba.cuda.cgutils import unpack_tuple
-from numba.cuda.core.extending import intrinsic
+from numba.cuda.cuda.extending import intrinsic
 from numba.core.imputils import impl_ret_new_ref
 from numba.core.errors import RequireLiteralValue, TypingError
 
